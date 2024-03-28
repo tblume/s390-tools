@@ -10,6 +10,8 @@
 #   parameters are evaluated and used to configure dasd devices.
 #
 
+zdev_dasd_base_args="--no-settle --yes --no-root-update --force"
+
 # shellcheck source=/dev/null
 type zdev_parse_dasd_list > /dev/null 2>&1 || . /lib/s390-tools/zdev-from-dasd_mod.dasd
 
@@ -27,9 +29,21 @@ zdev_vinfo() {
 
 zdev_parse_rd_dasd() {
     local _zdev_dasd _zdev_dasd_list
-    for _zdev_dasd in $(getargs rd.dasd -d 'rd_DASD='); do
-        _zdev_dasd_list="${_zdev_dasd_list:+${_zdev_dasd_list},}$_zdev_dasd"
-    done
+    # autodetect active bootdev from zipl device
+    if ! getargbool 0 'rd.dasd' \
+        && [[ -f /sys/firmware/ipl/ipl_type ]] \
+        && [[ $(< /sys/firmware/ipl/ipl_type) == "ccw" ]]; then
+        read -r _ccw < /sys/firmware/ipl/device
+
+        if lszdev --offline "$_ccw" &>/dev/null; then
+            chzdev --offline --existing --enable --active $zdev_dasd_base_args \
+                   dasd "$_ccw"
+        fi
+    else
+        for _zdev_dasd in $(getargs rd.dasd -d 'rd_DASD='); do
+            _zdev_dasd_list="${_zdev_dasd_list:+${_zdev_dasd_list},}$_zdev_dasd"
+        done
+    fi
     echo "$_zdev_dasd_list"
 }
 
